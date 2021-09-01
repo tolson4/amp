@@ -2,7 +2,7 @@ mod commands;
 
 use std::{collections::HashSet, env, sync::Arc};
 
-use commands::{ping::*, hw::*, player::*};
+use commands::{ping::*, player::*};
 use serenity::{
     async_trait,
     client::bridge::gateway::ShardManager,
@@ -11,6 +11,7 @@ use serenity::{
     model::{event::ResumedEvent, gateway::Ready},
     prelude::*,
 };
+use songbird::{SerenityInit};
 use tracing::{error, info};
 use tracing_subscriber::{EnvFilter, FmtSubscriber};
 
@@ -35,15 +36,16 @@ impl EventHandler for Handler {
 
 
 #[group]
-#[commands(ping, hello)]
+#[commands(ping)]
 struct General;
 
 #[group]
-#[commands(play, pause, queue, next, previous, resume, pause, stop)]
+#[commands(deafen, join, leave, mute, play_fade, queue, skip, stop, undeafen, unmute)]
 struct Player;
 
 #[tokio::main]
 async fn main() {
+    env_logger::init();
     // This will load the environment variables located at `./.env`, relative to
     // the CWD. See `./.env.example` for an example on how to structure this.
     dotenv::dotenv().expect("Failed to load .env file");
@@ -58,6 +60,7 @@ async fn main() {
     tracing::subscriber::set_global_default(subscriber).expect("Failed to start the logger");
 
     let token = env::var("DISCORD_TOKEN").expect("Expected a token in the environment");
+    info!("token: {}", token);
 
     let http = Http::new_with_token(&token);
 
@@ -71,7 +74,6 @@ async fn main() {
         },
         Err(why) => panic!("Could not access application info: {:?}", why),
     };
-
     // Create the framework
     let framework = StandardFramework::new()
         .configure(|c| c.owners(owners).prefix("~"))
@@ -81,6 +83,7 @@ async fn main() {
     let mut client = Client::builder(&token)
         .framework(framework)
         .event_handler(Handler)
+        .register_songbird()
         .await
         .expect("Err creating client");
 
