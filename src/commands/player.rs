@@ -1,3 +1,8 @@
+// commnads
+// 
+
+
+
 use std::{
     sync::{
         atomic::{AtomicUsize, Ordering},
@@ -22,14 +27,11 @@ use serenity::{
 };
 
 use songbird::{
-    input::{
-        self,
-        restartable::Restartable,
-    },
     Event,
     EventContext,
     EventHandler as VoiceEventHandler,
     TrackEvent,
+    input::{self, restartable::Restartable},
 };
 
 
@@ -262,23 +264,13 @@ async fn play_fade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
         Err(_) => {
             check_msg(
                 msg.channel_id
-                    .say(&ctx.http, "Must provide a URL to a video or audio")
+                    .say(&ctx.http, "Nothing to play!")
                     .await,
             );
 
             return Ok(());
         },
     };
-
-    if !url.starts_with("http") {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Must provide a valid URL")
-                .await,
-        );
-
-        return Ok(());
-    }
 
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
@@ -291,16 +283,26 @@ async fn play_fade(ctx: &Context, msg: &Message, mut args: Args) -> CommandResul
     if let Some(handler_lock) = manager.get(guild_id) {
         let mut handler = handler_lock.lock().await;
 
-        let source = match input::ytdl(&url).await {
-            Ok(source) => source,
-            Err(why) => {
-                println!("Err starting source: {:?}", why);
-
-                check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
-                return Ok(());
-            },
-        };
+        let source = 
+            if url.starts_with("http") {
+                match input::ytdl(url).await {
+                    Ok(source) => source,
+                    Err(why) => {
+                        println!("Err starting source: {:?}", why);
+                        check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
+                        return Ok(());
+                    }
+                }
+            } else {
+                match input::ytdl_search(url).await {
+                    Ok(source) => source,
+                    Err(why) => {
+                        println!("Err starting source: {:?}", why);
+                        check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
+                        return Ok(());
+                    }
+                }
+            };
 
         // This handler object will allow you to, as needed,
         // control the audio track via events and further commands.
@@ -387,30 +389,19 @@ impl VoiceEventHandler for SongEndNotifier {
 
 #[command]
 #[only_in(guilds)]
-async fn queue(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
+async fn play(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
     let url = match args.single::<String>() {
         Ok(url) => url,
         Err(_) => {
             check_msg(
                 msg.channel_id
-                    .say(&ctx.http, "Must provide a URL to a video or audio")
+                    .say(&ctx.http, "Nothing to play!")
                     .await,
             );
 
             return Ok(());
         },
     };
-
-    if !url.starts_with("http") {
-        check_msg(
-            msg.channel_id
-                .say(&ctx.http, "Must provide a valid URL")
-                .await,
-        );
-
-        return Ok(());
-    }
-
     let guild = msg.guild(&ctx.cache).await.unwrap();
     let guild_id = guild.id;
 
@@ -424,16 +415,27 @@ async fn queue(ctx: &Context, msg: &Message, mut args: Args) -> CommandResult {
 
         // Here, we use lazy restartable sources to make sure that we don't pay
         // for decoding, playback on tracks which aren't actually live yet.
-        let source = match Restartable::ytdl(url, true).await {
-            Ok(source) => source,
-            Err(why) => {
-                println!("Err starting source: {:?}", why);
-
-                check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
-
-                return Ok(());
-            },
-        };
+        let source = 
+            if url.starts_with("http") {
+                match Restartable::ytdl(url, true).await {
+                    Ok(source) => source,
+                    Err(why) => {
+                        println!("Err starting source: {:?}", why);
+                        check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
+                        return Ok(());
+                    }
+                }
+            } else {
+                // let search_string = args.single()
+                match Restartable::ytdl_search(args.message(), true).await {
+                    Ok(source) => source,
+                    Err(why) => {
+                        println!("Err starting source: {:?}", why);
+                        check_msg(msg.channel_id.say(&ctx.http, "Error sourcing ffmpeg").await);
+                        return Ok(());
+                    }
+                }
+            };
 
         handler.enqueue_source(source.into());
 
